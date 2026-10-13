@@ -50,17 +50,20 @@
   // 각주 번호 ^1 → 위첨자 (이미 escape된 문자열에 적용)
   const fnRefs = (h) => h.replace(/\^(\d+)/g, '<sup class="fn-ref">$1</sup>');
 
-  // 본문 한 줄: [대상]{표시:필기} · [대상]{표시<:필기}(필기를 대상 왼쪽 끝에 맞춤) · ^1
+  // 필기 색: r 빨강 · b 파랑 · g 초록 · o 주황 · p 보라 (없으면 기본 청록)
+  const col = (c) => (c ? ` col-${c}` : '');
+
+  // 본문 한 줄: [대상]{표시:필기} · [대상]{표시<:필기}(필기를 대상 왼쪽 끝에 맞춤) · [대상]{표시.색:필기} · ^1
   function parseLine(text, ctx) {
-    const re = /\[([^\]]+)\]\{([a-z])(<)?(?::((?:\{\{.*?\}\}|[^}])*))?\}/g;
+    const re = /\[([^\]]+)\]\{([a-z])(?:\.([a-z]))?(<)?(?::((?:\{\{.*?\}\}|[^}])*))?\}/g;
     let html = '', last = 0, m;
     const notes = [];
     while ((m = re.exec(text))) {
       html += fnRefs(esc(text.slice(last, m.index)));
       const k = notes.length;
       const target = unit(ctx, 'text', fnRefs(esc(m[1])), 'tgt');
-      html += `<span class="an m-${m[2]}" data-k="${k}">${target}</span>`;
-      notes.push({ k, align: m[3] ? 'start' : 'center', html: m[4] ? blankable(m[4].replace(/\\n/g, '\n'), ctx, 'note') : '' });
+      html += `<span class="an m-${m[2]}${col(m[3])}" data-k="${k}">${target}</span>`;
+      notes.push({ k, color: m[3], align: m[4] ? 'start' : 'center', html: m[5] ? blankable(m[5].replace(/\\n/g, '\n'), ctx, 'note') : '' });
       last = re.lastIndex;
     }
     html += fnRefs(esc(text.slice(last)));
@@ -80,16 +83,16 @@
     const lineHtml = (ln, i) => {
       const ctx = C(`L${i + 1}-`);
       const { html, notes } = parseLine(ln.text, ctx);
-      if (ln.under) notes.push({ k: 'u', align: 'under', at: ln.underAt || 0, html: blankable(ln.under, ctx, 'note') });
-      const side = ln.side ? `<span class="side">${blankable(ln.side, ctx, 'note')}</span>` : '';
+      if (ln.under) notes.push({ k: 'u', color: ln.underColor, align: 'under', at: ln.underAt || 0, html: blankable(ln.under, ctx, 'note') });
+      const side = ln.side ? `<span class="side${col(ln.sideColor)}">${blankable(ln.side, ctx, 'note')}</span>` : '';
       const stage = ln.stage
-        ? `<div class="stage"><span class="stage-tag">${esc(ln.stage.tag)}</span><span class="stage-v">${blankable(ln.stage.text, ctx, 'note')}</span></div>`
+        ? `<div class="stage${col(ln.stage.color)}"><span class="stage-tag">${esc(ln.stage.tag)}</span><span class="stage-v">${blankable(ln.stage.text, ctx, 'note')}</span></div>`
         : '';
       const trans = ln.trans ? unit(ctx, 'trans', rich(ln.trans, ctx, 'trans'), 'whole') : '';
       const cls = ['ln', ln.gapBefore ? 'gap' : '', ln.indent ? 'indent' : ''].join(' ');
       return `<div class="${cls}" data-li="${i + 1}">
         <div class="c-src"><div class="src"><span class="src-text">${html}</span>${side}</div>
-          <div class="notes">${notes.map((n) => `<div class="nt" data-k="${n.k}" data-align="${n.align}" data-at="${n.at || 0}">${n.html}</div>`).join('')}</div></div>
+          <div class="notes">${notes.map((n) => `<div class="nt${col(n.color)}" data-k="${n.k}" data-align="${n.align}" data-at="${n.at || 0}">${n.html}</div>`).join('')}</div></div>
         <div class="c-stage">${stage}</div>
         ${hasTrans ? `<div class="c-trans">${trans}</div>` : ''}
       </div>`;
@@ -111,14 +114,14 @@
     const pageParts = Array.from({ length: nPages }, () => ({ lines: '', brackets: '', rightNotes: '', closing: '', fns: '' }));
     P.lines.forEach((ln, i) => { pageParts[pageOfLine[i + 1]].lines += lineHtml(ln, i); });
     (P.brackets || []).forEach((b, i) => {
-      pageParts[pageOfLine[b.from]].brackets += `<div class="br-label" data-bi="${i}">${blankable(b.label, C(`B${i}-`), 'note')}</div>`;
+      pageParts[pageOfLine[b.from]].brackets += `<div class="br-label${col(b.color)}" data-bi="${i}">${blankable(b.label, C(`B${i}-`), 'note')}</div>`;
     });
     (P.rightNotes || []).forEach((r, i) => {
-      pageParts[pageOfLine[r.from]].rightNotes += `<div class="rn" data-ri="${i}">${blankable(r.text, C(`R${i}-`), 'note')}</div>`;
+      pageParts[pageOfLine[r.from]].rightNotes += `<div class="rn${col(r.color)}" data-ri="${i}">${blankable(r.text, C(`R${i}-`), 'note')}</div>`;
     });
     if (P.closing) {
       const ctx = C('CL-');
-      pageParts[pageOfLine[P.closing.from]].closing = `<div class="closing">
+      pageParts[pageOfLine[P.closing.from]].closing = `<div class="closing${col(P.closing.color)}">
         <div class="closing-main">${blankable(P.closing.text, ctx, 'note')}</div>
         ${P.closing.sub ? `<div class="closing-sub">${blankable(P.closing.sub, ctx, 'note')}</div>` : ''}
       </div>`;
@@ -127,9 +130,24 @@
       pageParts[fnPage(f)].fns += `<div class="fn"><span class="fn-n">${f.n}</span><span><b>${esc(f.term)}</b> ${rich(f.text, C(`F${i}-`), 'note')}</span></div>`;
     });
 
-    const cards = (p.summary || []).map((c, ci) => renderCard(c, C(`K${ci}-`))).join('');
+    // 정리 카드도 pageBreak가 있으면 그 카드부터 다음 장(정리만 있는 장)
+    const cardGroups = [''];
+    (p.summary || []).forEach((c, ci) => {
+      if (ci > 0 && c.pageBreak) cardGroups.push('');
+      cardGroups[cardGroups.length - 1] += renderCard(c, C(`K${ci}-`));
+    });
+    const nAll = nPages + cardGroups.length - 1;
     const where = [p.unit, p.lesson].filter(Boolean).map(esc).join(' · ');
     const colHead = `<div class="ln col-head"><div>${esc(P.textLabel || '본문')}</div><div>${esc(P.stageLabel || '시상 전개')}</div>${hasTrans ? `<div>${esc(P.transLabel || '현대어 풀이')}</div>` : ''}</div>`;
+
+    const contHead = `<header class="sh-head sh-cont">
+        <div class="sh-top"><span class="sh-where">${esc(p.title)} — ${esc(p.author || '')}</span><span class="sh-kind">문학 학습지</span></div>
+      </header>`;
+    const summarySec = (cards, cont) => `<section class="sec sec-summary">
+        <h2 class="sec-h"><span class="sec-n">Ⅱ</span>갈래 및 특성 정리${cont ? '<span class="sec-cont">(이어서)</span>' : ''}</h2>
+        <div class="summary">${cards}</div>
+      </section>`;
+    const foot = (pi) => `<footer class="sh-foot"><span>${esc(p.title)} — ${esc(p.author || '')}</span>${nAll > 1 ? `<span class="sh-page">${pi + 1} / ${nAll}</span>` : ''}<span>${where}</span></footer>`;
 
     const html = pageParts.map((pp, pi) => {
       const first = pi === 0, last = pi === nPages - 1;
@@ -143,9 +161,7 @@
           </div>
           <div class="sh-name"><div><span>학번</span><i></i></div><div><span>이름</span><i></i></div></div>
         </div>
-      </header>` : `<header class="sh-head sh-cont">
-        <div class="sh-top"><span class="sh-where">${esc(p.title)} — ${esc(p.author || '')}</span><span class="sh-kind">문학 학습지</span></div>
-      </header>`;
+      </header>` : contHead;
       const passage = `<section class="sec sec-passage">
         <h2 class="sec-h"><span class="sec-n">Ⅰ</span>지문 읽기 · 필기${first ? '' : '<span class="sec-cont">(이어서)</span>'}${P.legend ? `<span class="sec-legend">${esc(P.legend)}</span>` : ''}</h2>
         <div class="passage" style="${pStyle}">
@@ -161,19 +177,21 @@
       </section>`;
       const summary = last ? `
 
-      <section class="sec sec-summary">
-        <h2 class="sec-h"><span class="sec-n">Ⅱ</span>갈래 및 특성 정리</h2>
-        <div class="summary">${cards}</div>
-      </section>` : '';
-      const pageNo = nPages > 1 ? `<span class="sh-page">${pi + 1} / ${nPages}</span>` : '';
+      ${summarySec(cardGroups[0], false)}` : '';
       return `<div class="sheet" data-id="${esc(p.id)}"><div class="sheet-inner">
       ${head}
 
       ${passage}${summary}
 
-      <footer class="sh-foot"><span>${esc(p.title)} — ${esc(p.author || '')}</span>${pageNo}<span>${where}</span></footer>
+      ${foot(pi)}
     </div></div>`;
-    }).join('');
+    }).join('') + cardGroups.slice(1).map((cards, gi) => `<div class="sheet" data-id="${esc(p.id)}"><div class="sheet-inner">
+      ${contHead}
+
+      ${summarySec(cards, true)}
+
+      ${foot(nPages + gi)}
+    </div></div>`).join('');
 
     return { html, units };
   }
@@ -262,11 +280,13 @@
     const x = gut - 10, tick = 7;
     const srcRect = (li) => $(`.ln[data-li="${li}"] .src`, body).getBoundingClientRect();
     const srcMid = (li) => { const r = srcRect(li); return r.top + r.height / 2 - B.top; };
-    let d = '';
+    let d = '', extra = '';
     (p.passage.brackets || []).forEach((b, i) => {
       if (!has(b.from)) return;
       const y1 = srcMid(b.from), y2 = srcMid(b.to);
-      d += `M${x + tick},${y1}H${x}V${y2}H${x + tick}`;
+      const seg = `M${x + tick},${y1}H${x}V${y2}H${x + tick}`;
+      if (b.color) extra += `<path class="col-${b.color}" d="${seg}" fill="none"/>`;
+      else d += seg;
       const lab = $(`.br-label[data-bi="${i}"]`, body);
       lab.style.width = (x - 6) + 'px';
       lab.style.top = ((y1 + y2) / 2 - lab.offsetHeight / 2) + 'px';
@@ -291,12 +311,12 @@
       const m = $('.closing-main', cl).getBoundingClientRect();
       const y2 = m.top + m.height / 2 - B.top;
       const x2 = m.left - B.left - 4;
-      d += `M${x + tick},${y1}H${x}V${y2}H${x2}`;
-      arrow = `<path d="M${x2 - 5},${y2 - 4}L${x2},${y2}L${x2 - 5},${y2 + 4}" fill="none"/>`;
+      const c = p.passage.closing.color ? ` class="col-${p.passage.closing.color}"` : '';
+      arrow = `<path${c} d="M${x + tick},${y1}H${x}V${y2}H${x2}M${x2 - 5},${y2 - 4}L${x2},${y2}L${x2 - 5},${y2 + 4}" fill="none"/>`;
     }
     svg.setAttribute('width', B.width);
     svg.setAttribute('height', B.height);
-    svg.innerHTML = `<path d="${d}" fill="none"/>${arrow}`;
+    svg.innerHTML = `<path d="${d}" fill="none"/>${extra}${arrow}`;
   }
 
   /* ---------- 한 장에 맞추기: 넘치면 줄이고, 남는 공간은 정리 카드가 채운다 ---------- */
