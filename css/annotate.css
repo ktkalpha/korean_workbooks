@@ -1,0 +1,76 @@
+/* PDF 표시하기 */
+.tb-link { color: var(--ui-muted); text-decoration: none; font-size: 14px; padding: 4px 8px; border-radius: 6px; }
+.tb-link:hover { color: var(--ui-ink); background: var(--ui-bg); }
+
+.g-tool {
+  display: grid; gap: 4px; margin-top: 20px; padding: 16px;
+  border: 1px dashed var(--ui-accent); border-radius: 10px;
+  color: inherit; text-decoration: none; background: var(--ui-panel);
+}
+.g-tool b { color: var(--ui-accent); }
+.g-tool span { font-size: 13.5px; color: var(--ui-muted); }
+
+.pdfmark { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 20px; align-items: start; max-width: 1400px; margin: 0 auto; }
+.pdfmark.dragging .pm-pages { outline: 3px dashed var(--ui-accent); outline-offset: 4px; }
+
+.pm-side {
+  position: sticky; top: 66px; max-height: calc(100vh - 82px); overflow: auto;
+  background: var(--ui-panel); border: 1px solid var(--ui-line); border-radius: 10px; padding: 16px;
+}
+.pm-side h1 { margin: 0 0 6px; font-family: var(--f-batang); font-size: 22px; }
+.pm-side h2 { margin: 18px 0 8px; font-size: 14px; }
+.pm-side h2 small { font-weight: 400; color: var(--ui-muted); }
+.pm-lead, .pm-tip, .pm-file { font-size: 13px; color: var(--ui-muted); margin: 0 0 10px; }
+.pm-file { margin-top: 8px; word-break: break-all; }
+.pm-open { display: inline-block; padding: 7px 14px; border-radius: 6px; background: var(--ui-accent); color: var(--ui-accent-ink); cursor: pointer; font-size: 14px; }
+
+.pm-kinds { display: grid; gap: 6px; }
+.pm-kinds button {
+  display: grid; grid-template-columns: 14px auto 1fr auto; align-items: center; gap: 8px; text-align: left;
+  font: inherit; font-size: 13px; padding: 7px 10px; border-radius: 7px; cursor: pointer;
+  border: 1px solid var(--ui-line); background: var(--ui-panel); color: var(--ui-ink);
+}
+.pm-kinds button small { color: var(--ui-muted); }
+.pm-kinds .sw { width: 14px; height: 14px; border-radius: 3px; background: var(--c); }
+.pm-kinds button[aria-pressed="true"] { border-color: var(--c); box-shadow: inset 0 0 0 1.5px var(--c); }
+kbd { font: 11px/1 var(--f-dotum); padding: 2px 5px; border: 1px solid var(--ui-line); border-radius: 3px; color: var(--ui-muted); }
+
+#pm-note { width: 100%; font: inherit; font-size: 13.5px; padding: 8px; border-radius: 6px; border: 1px solid var(--ui-line); background: var(--ui-panel); color: var(--ui-ink); resize: vertical; }
+
+.pm-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.pm-list li {
+  display: grid; grid-template-columns: 22px 46px 72px minmax(0, 1fr) 22px; align-items: center; gap: 4px;
+  padding: 4px 6px; border-radius: 6px; border-left: 4px solid var(--c); background: var(--ui-bg); font-size: 13px; cursor: pointer;
+}
+.pm-list li.sel { box-shadow: inset 0 0 0 1.5px var(--c); }
+.pm-list li.empty { display: block; border: 0; color: var(--ui-muted); background: none; cursor: default; }
+.pm-list .no { font-weight: 700; text-align: center; }
+.pm-list .pg { color: var(--ui-muted); white-space: nowrap; }
+.pm-list select, .pm-list input { font: inherit; font-size: 12.5px; padding: 3px 4px; border: 1px solid var(--ui-line); border-radius: 4px; background: var(--ui-panel); color: var(--ui-ink); min-width: 0; }
+.pm-list .del { border: 0; background: none; color: var(--ui-muted); font-size: 16px; cursor: pointer; }
+.pm-list .del:hover { color: #d64545; }
+
+.pm-actions { display: flex; gap: 6px; margin: 16px 0 8px; }
+.pm-actions button { font: inherit; font-size: 13.5px; padding: 7px 12px; border-radius: 6px; border: 1px solid var(--ui-line); background: var(--ui-panel); color: var(--ui-ink); cursor: pointer; }
+.pm-actions button.primary { background: var(--ui-accent); color: var(--ui-accent-ink); border-color: var(--ui-accent); }
+.pm-actions button:disabled { opacity: .5; cursor: default; }
+
+.pm-pages { display: grid; gap: 22px; min-height: 60vh; }
+.pm-drop { display: grid; place-items: center; min-height: 60vh; border: 2px dashed var(--ui-line); border-radius: 12px; color: var(--ui-muted); }
+.pm-page header { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; font-size: 13px; }
+.pm-whole { color: var(--ui-muted); display: flex; gap: 4px; align-items: center; }
+.pm-whole button { font: inherit; font-size: 12px; padding: 2px 8px; border-radius: 5px; border: 1px solid var(--ui-line); background: var(--ui-panel); color: var(--ui-ink); cursor: pointer; }
+.pm-sheet { position: relative; width: 100%; max-width: 980px; background: #fff; box-shadow: 0 2px 12px rgba(0,0,0,.15); }
+.pm-sheet canvas { display: block; width: 100%; height: 100%; }
+.pm-layer { position: absolute; inset: 0; cursor: crosshair; touch-action: none; }
+
+.pm-box { position: absolute; border: 2px solid var(--c); background: color-mix(in srgb, var(--c) 13%, transparent); border-radius: 2px; cursor: pointer; }
+.pm-box.ghost { border-style: dashed; pointer-events: none; }
+.pm-box.whole { border-width: 4px; background: color-mix(in srgb, var(--c) 6%, transparent); pointer-events: none; }
+.pm-box.whole .pm-tag { pointer-events: auto; }
+.pm-box.sel { box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 40%, transparent); }
+.pm-tag {
+  position: absolute; left: -2px; bottom: 100%; max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: 700 11px/1.5 var(--f-dotum); color: #fff; background: var(--c); padding: 0 6px; border-radius: 3px 3px 0 0; cursor: pointer;
+}
+.pm-box.whole .pm-tag { bottom: auto; top: 0; border-radius: 0 0 3px 0; }

@@ -7,13 +7,16 @@
   <link rel="stylesheet" href="css/fonts.css">
   <link rel="stylesheet" href="css/app.css">
   <link rel="stylesheet" href="css/sheet.css">
+  <link rel="stylesheet" href="css/annotate.css">
   <script src="js/registry.js"></script>
   <script src="data/manifest.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/annotate.js"></script>
 </head>
 <body>
   <header class="toolbar">
     <a class="brand" href="#/">국어 학습지</a>
+    <a class="tb-link" href="#/pdf">PDF 표시하기</a>
     <div id="tb-sheet" class="tb-sheet" hidden>
       <span id="tb-title" class="tb-title"></span>
       <span id="blank-count" class="tb-count"></span>
@@ -50,7 +53,10 @@
       <h1>지문 목록</h1>
       <p class="lead">지문 · 필기 · 갈래 및 특성 정리를 A4 한 장에 담은 학습지입니다. 지문을 고르고 빈칸을 뚫은 뒤 A4로 인쇄하세요.</p>
       <div id="gallery-list" class="g-list"></div>
+      <a class="g-tool" href="#/pdf"><b>PDF 표시하기</b><span>새 지문을 맡기기 전에, 교과서 PDF에 담을 것·버릴 것·중요한 것을 상자로 표시해 저장합니다. 저장한 PDF를 Claude에게 보내세요.</span></a>
     </section>
+
+    <section id="pdfmark" class="pdfmark" hidden></section>
 
     <section id="viewer" class="viewer" hidden>
       <p id="fit-warn" class="fit-warn" hidden>내용이 A4 한 장을 넘습니다. 정리 항목을 줄여 주세요.</p>

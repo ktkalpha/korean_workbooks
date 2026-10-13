@@ -384,6 +384,7 @@
     const ids = new Set(units.map((u) => u.id));
     state.blanks = new Set(store.get('wb:blanks:' + id, []).filter((b) => ids.has(b)));
     $('#gallery').hidden = true;
+    $('#pdfmark').hidden = true;
     $('#viewer').hidden = false;
     $('#tb-sheet').hidden = false;
     $('#tb-title').textContent = p.title;
@@ -405,6 +406,7 @@
   function showGallery() {
     state.p = null;
     $('#viewer').hidden = true;
+    $('#pdfmark').hidden = true;
     $('#tb-sheet').hidden = true;
     $('#gallery').hidden = false;
     document.title = '국어 학습지';
@@ -505,7 +507,19 @@
 
   function route() {
     const id = decodeURIComponent((location.hash.match(/^#\/([^?]+)/) || [])[1] || '');
-    if (id) openSheet(id); else showGallery();
+    if (id === 'pdf') showPdfMark();
+    else if (id) openSheet(id);
+    else showGallery();
+  }
+
+  function showPdfMark() {
+    state.p = null;
+    $('#viewer').hidden = true;
+    $('#gallery').hidden = true;
+    $('#tb-sheet').hidden = true;
+    $('#pdfmark').hidden = false;
+    document.title = 'PDF 표시하기 — 국어 학습지';
+    WB.annotate.show();
   }
 
   function loadScript(src) {

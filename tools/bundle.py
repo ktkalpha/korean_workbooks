@@ -16,8 +16,10 @@ out = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / 'out' / '국어학습�
 manifest = (ROOT / 'data/manifest.js').read_text(encoding='utf-8')
 ids = re.findall(r"'([a-z0-9_-]+)'", manifest.split('[', 1)[1])
 data = [(ROOT / f'data/passages/{i}.js').read_text(encoding='utf-8') for i in ids]
-js = [(ROOT / p).read_text(encoding='utf-8') for p in ('js/registry.js', 'js/app.js')]
-css = {p: (ROOT / p).read_text(encoding='utf-8') for p in ('css/fonts.css', 'css/app.css', 'css/sheet.css')}
+js = [(ROOT / p).read_text(encoding='utf-8') for p in ('js/registry.js', 'js/app.js', 'js/annotate.js')]
+css = {p: (ROOT / p).read_text(encoding='utf-8') for p in ('css/fonts.css', 'css/app.css', 'css/sheet.css', 'css/annotate.css')}
+# PDF 표시하기용 라이브러리 (pdf.js 워커는 같은 스레드에서 돌도록 일반 스크립트로 넣는다)
+vendor = [(ROOT / 'vendor' / f).read_text(encoding='utf-8') for f in ('pdf.min.js', 'pdf.worker.min.js', 'pdf-lib.min.js', 'cmaps-ko.js')]
 html = (ROOT / 'index.html').read_text(encoding='utf-8')
 
 # 쓰인 글자 + 기본 문장부호·숫자·영문
@@ -55,8 +57,10 @@ font_css = '\n'.join(faces) + """
   --f-dotum: 'KoPubWorld Dotum', 'KoPubWorld Dotum Web', 'KoPub Dotum', sans-serif;
 }"""
 
-style = f"<style>\n{font_css}\n{css['css/app.css']}\n{css['css/sheet.css']}\n</style>"
-scripts = '<script>\n' + '\n'.join(js) + '\nWB.manifest = [];\n' + '\n'.join(data) + '\n</script>'
+style = f"<style>\n{font_css}\n{css['css/app.css']}\n{css['css/sheet.css']}\n{css['css/annotate.css']}\n</style>"
+def inline(code):
+    return '<script>\n' + code.replace('</script', '<\\/script') + '\n</script>'
+scripts = '\n'.join(inline(v) for v in vendor) + '\n<script>\n' + '\n'.join(js) + '\nWB.manifest = [];\n' + '\n'.join(data) + '\n</script>'
 
 html = re.sub(r'\s*<link rel="stylesheet"[^>]*>', '', html)
 html = re.sub(r'\s*<script src="[^"]*"></script>', '', html)
