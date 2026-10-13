@@ -1,0 +1,414 @@
+/* 국어 학습지 — 렌더링 · 필기 배치 · 빈칸 뚫기 */
+(function () {
+  'use strict';
+
+  const CATS = {
+    note:  '필기',
+    key:   '정리 핵심어',
+    text:  '본문 표시어',
+    trans: '현대어 풀이',
+  };
+  const DEFAULT_AUTO = { cats: { note: true, key: true, text: false, trans: false }, ratio: 60 };
+
+  const $ = (sel, root = document) => root.querySelector(sel);
+  const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  /* ---------- 저장 (실패해도 동작) ---------- */
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* ignore */ } },
+  };
+
+  /* ---------- 마크업 → HTML ---------- */
+  // 빈칸 단위 하나를 만든다. ctx.units 에 기록된다.
+  function unit(ctx, cat, inner, cls) {
+    const id = ctx.prefix + (ctx.n++);
+    ctx.units.push({ id, cat });
+    return `<span class="bk ${cls || ''}" data-bid="${id}" data-cat="${cat}">${inner}</span>`;
+  }
+
+  // {{핵심어}}, **굵게**, 줄바꿈 처리. {{ }} 안은 빈칸 단위가 된다.
+  function rich(s, ctx, cat) {
+    const re = /\{\{(.+?)\}\}|\*\*(.+?)\*\*|\n/g;
+    let out = '', last = 0, m;
+    while ((m = re.exec(s))) {
+      out += esc(s.slice(last, m.index));
+      if (m[1] != null) out += unit(ctx, cat, esc(m[1]), 'kw');
+      else if (m[2] != null) out += `<b>${esc(m[2])}</b>`;
+      else out += '<br>';
+      last = re.lastIndex;
+    }
+    return out + esc(s.slice(last));
+  }
+
+  // {{ }}가 있으면 그 부분만, 없으면 전체가 하나의 빈칸 단위.
+  function blankable(s, ctx, cat) {
+    return /\{\{.+?\}\}/.test(s) ? rich(s, ctx, cat) : unit(ctx, cat, rich(s, ctx, cat), 'whole');
+  }
+
+  // 본문 한 줄: [대상]{표시:필기}, ^1
+  function parseLine(text, ctx) {
+    const re = /\[([^\]]+)\]\{([a-z])(?::([^}]*))?\}|\^(\d+)/g;
+    let html = '', last = 0, m;
+    const notes = [];
+    while ((m = re.exec(text))) {
+      html += esc(text.slice(last, m.index));
+      if (m[4]) {
+        html += `<sup class="fn-ref">${m[4]}</sup>`;
+      } else {
+        const k = notes.length;
+        const target = unit(ctx, 'text', esc(m[1]), 'tgt');
+        html += `<span class="an m-${m[2]}" data-k="${k}">${target}</span>`;
+        notes.push({ k, html: m[3] ? blankable(m[3].replace(/\\n/g, '\n'), ctx, 'note') : '' });
+      }
+      last = re.lastIndex;
+    }
+    html += esc(text.slice(last));
+    return { html, notes: notes.filter((n) => n.html) };
+  }
+
+  /* ---------- 학습지 렌더링 ---------- */
+  function renderSheet(p) {
+    const units = [];
+    const C = (prefix) => ({ prefix, n: 0, units });
+    const P = p.passage;
+
+    const lines = P.lines.map((ln, i) => {
+      const ctx = C(`L${i + 1}-`);
+      const { html, notes } = parseLine(ln.text, ctx);
+      const side = ln.side ? `<span class="side">${blankable(ln.side, ctx, 'note')}</span>` : '';
+      const stage = ln.stage
+        ? `<div class="stage"><span class="stage-mark">▶</span> <b class="stage-tag">${esc(ln.stage.tag)}</b>: ${blankable(ln.stage.text, ctx, 'note')}</div>`
+        : '';
+      const trans = ln.trans ? unit(ctx, 'trans', rich(ln.trans, ctx, 'trans'), 'whole') : '';
+      return `<div class="ln" data-li="${i + 1}">
+        <div class="c-src"><div class="src"><span class="src-text">${html}</span>${side}</div>
+          <div class="notes">${notes.map((n) => `<div class="nt" data-k="${n.k}">${n.html}</div>`).join('')}</div></div>
+        <div class="c-stage">${stage}</div>
+        <div class="c-trans">${trans}</div>
+      </div>`;
+    }).join('');
+
+    const brackets = (P.brackets || []).map((b, i) =>
+      `<div class="br-label" data-bi="${i}">${blankable(b.label, C(`B${i}-`), 'note')}</div>`).join('');
+
+    let closing = '';
+    if (P.closing) {
+      const ctx = C('CL-');
+      closing = `<div class="ln closing-row"><div class="c-src"><div class="closing">
+        <div class="closing-main">${blankable(P.closing.text, ctx, 'note')}</div>
+        ${P.closing.sub ? `<div class="closing-sub">${blankable(P.closing.sub, ctx, 'note')}</div>` : ''}
+      </div></div></div>`;
+    }
+
+    const fns = (P.footnotes || []).map((f, i) =>
+      `<div class="fn"><span class="fn-n">${f.n}</span> <b>${esc(f.term)}</b> ${rich(f.text, C(`F${i}-`), 'note')}</div>`).join('');
+
+    const cards = (p.summary || []).map((c, ci) => renderCard(c, C(`K${ci}-`))).join('');
+
+    const html = `<div class="sheet" data-id="${esc(p.id)}"><div class="sheet-inner">
+      <header class="sh-head">
+        <div class="sh-top"><span>${esc(p.unit || '')}${p.lesson ? ' · ' + esc(p.lesson) : ''}</span><span class="sh-kind">문학 학습지</span></div>
+        <div class="sh-title-row">
+          <h1 class="sh-title">${esc(p.title)}${p.hanja ? `<span class="hanja">(${esc(p.hanja)})</span>` : ''}</h1>
+          <span class="sh-author">${esc(p.author || '')}</span>
+          ${p.genre ? `<span class="chip">${esc(p.genre)}</span>` : ''}
+          <div class="sh-name"><span>학번</span><i></i><span>이름</span><i class="wide"></i></div>
+        </div>
+        ${p.source ? `<div class="sh-source">— ${esc(p.source)}</div>` : ''}
+      </header>
+
+      <section class="sec sec-passage">
+        <h2 class="sec-h"><span class="sec-n">Ⅰ</span>지문 읽기 · 필기</h2>
+        <div class="passage">
+          <div class="ln col-head"><div>${esc(P.textLabel || '본문')}</div><div>${esc(P.stageLabel || '')}</div><div>${esc(P.transLabel || '')}</div></div>
+          <div class="passage-body">
+            <svg class="br-svg" aria-hidden="true"></svg>
+            ${brackets}
+            ${lines}
+            ${closing}
+          </div>
+          ${fns ? `<div class="fns">${fns}</div>` : ''}
+        </div>
+      </section>
+
+      <section class="sec sec-summary">
+        <h2 class="sec-h"><span class="sec-n">Ⅱ</span>갈래 및 특성 정리</h2>
+        <div class="summary">${cards}</div>
+      </section>
+    </div></div>`;
+
+    return { html, units };
+  }
+
+  function renderCard(c, ctx) {
+    let body = '';
+    if (c.type === 'table') {
+      body = `<table class="kv">${c.rows.map(([k, v]) =>
+        `<tr><th>${esc(k)}</th><td>${blankable(v, ctx, 'key')}</td></tr>`).join('')}</table>`;
+    } else if (c.type === 'stages') {
+      body = `<div class="stages">${c.rows.map(([rng, tag, v]) =>
+        `<div class="stg"><span class="stg-rng">${esc(rng)}</span><span class="stg-tag">${esc(tag)}</span><span class="stg-v">${blankable(v, ctx, 'key')}</span></div>`).join('')}</div>`;
+    } else if (c.type === 'map') {
+      body = `<table class="map">${c.rows.map(([k, v]) =>
+        `<tr><th>${esc(k)}</th><td class="arr">→</td><td>${blankable(v, ctx, 'key')}</td></tr>`).join('')}</table>`;
+    } else if (c.type === 'flow') {
+      body = `<div class="flow">${c.steps.map((s) => `<div class="fl-step">${blankable(s, ctx, 'key')}</div>`).join('<div class="fl-arr">▼</div>')}</div>`;
+    } else if (c.type === 'list') {
+      body = `<ul class="list">${c.items.map((s) => `<li>${blankable(s, ctx, 'key')}</li>`).join('')}</ul>`;
+    } else {
+      body = `<p class="text">${blankable(c.text || '', ctx, 'key')}</p>`;
+    }
+    const pos = [c.span && `grid-column: span ${c.span}`, c.rowSpan && `grid-row: span ${c.rowSpan}`].filter(Boolean).join(';');
+    const span = pos ? ` style="${pos}"` : '';
+    return `<div class="card card-${esc(c.type)}"${span}><h3>■ ${esc(c.title)}</h3>${body}</div>`;
+  }
+
+  /* ---------- 필기 배치: 표시한 부분 바로 밑 가운데 ---------- */
+  function layoutNotes(sheet) {
+    const GAP = 6;
+    $$('.ln[data-li]', sheet).forEach((ln) => {
+      const cell = $('.c-src', ln);
+      const box = $('.notes', ln);
+      const nts = $$('.nt', box);
+      if (!nts.length) { box.style.height = '0px'; return; }
+      const cr = cell.getBoundingClientRect();
+      const maxRight = cr.width;
+      const items = nts.map((nt) => {
+        const an = $(`.an[data-k="${nt.dataset.k}"]`, ln);
+        const r = an.getBoundingClientRect();
+        nt.style.left = '0px';
+        const w = nt.offsetWidth;
+        return { nt, w, center: (r.left + r.right) / 2 - cr.left };
+      }).sort((a, b) => a.center - b.center);
+
+      let prevRight = -Infinity;
+      items.forEach((it) => {
+        it.left = Math.max(it.center - it.w / 2, 0, prevRight + GAP);
+        prevRight = it.left + it.w;
+      });
+      let nextLeft = Infinity;
+      for (let i = items.length - 1; i >= 0; i--) {
+        const it = items[i];
+        const right = Math.min(it.left + it.w, maxRight, nextLeft - GAP);
+        it.left = Math.max(0, right - it.w);
+        nextLeft = it.left;
+      }
+      let h = 0;
+      items.forEach((it) => { it.nt.style.left = it.left + 'px'; h = Math.max(h, it.nt.offsetHeight); });
+      box.style.height = h + 'px';
+    });
+  }
+
+  /* ---------- 줄 묶음 괄호와 낙구 화살표 ---------- */
+  function layoutBrackets(sheet, p) {
+    const body = $('.passage-body', sheet);
+    const svg = $('.br-svg', body);
+    const B = body.getBoundingClientRect();
+    const gut = parseFloat(getComputedStyle(body).paddingLeft);
+    const x = gut - 10, tick = 7;
+    const srcMid = (li) => {
+      const r = $(`.ln[data-li="${li}"] .src`, body).getBoundingClientRect();
+      return r.top + r.height / 2 - B.top;
+    };
+    let d = '';
+    (p.passage.brackets || []).forEach((b, i) => {
+      const y1 = srcMid(b.from), y2 = srcMid(b.to);
+      d += `M${x + tick},${y1}H${x}V${y2}H${x + tick}`;
+      const lab = $(`.br-label[data-bi="${i}"]`, body);
+      lab.style.width = (x - 6) + 'px';
+      lab.style.top = ((y1 + y2) / 2 - lab.offsetHeight / 2) + 'px';
+    });
+    const cl = p.passage.closing && $('.closing', body);
+    let arrow = '';
+    if (cl) {
+      const r = $(`.ln[data-li="${p.passage.closing.from}"] .src`, body).getBoundingClientRect();
+      const y1 = r.top - B.top - 2;
+      const m = $('.closing-main', cl).getBoundingClientRect();
+      const y2 = m.top + m.height / 2 - B.top;
+      const x2 = m.left - B.left - 4;
+      d += `M${x + tick},${y1}H${x}V${y2}H${x2}`;
+      arrow = `<path d="M${x2 - 5},${y2 - 4}L${x2},${y2}L${x2 - 5},${y2 + 4}" fill="none"/>`;
+    }
+    svg.setAttribute('width', B.width);
+    svg.setAttribute('height', B.height);
+    svg.innerHTML = `<path d="${d}" fill="none"/>${arrow}`;
+  }
+
+  /* ---------- 한 장에 맞추기 ---------- */
+  function fit(sheet, p) {
+    const inner = $('.sheet-inner', sheet);
+    let s = 1;
+    for (; s >= 0.76; s = +(s - 0.02).toFixed(2)) {
+      sheet.style.setProperty('--scale', s);
+      layoutNotes(sheet);
+      layoutBrackets(sheet, p);
+      if (inner.scrollHeight <= inner.clientHeight + 1) break;
+    }
+    const over = inner.scrollHeight > inner.clientHeight + 1;
+    const warn = $('#fit-warn');
+    if (warn) warn.hidden = !over;
+    return s;
+  }
+
+  /* ---------- 앱 ---------- */
+  const state = {
+    p: null, units: [], blanks: new Set(),
+    opts: Object.assign({ edit: true, numbers: true, answers: false }, store.get('wb:opts', {})),
+    auto: store.get('wb:auto', DEFAULT_AUTO),
+  };
+
+  function saveBlanks() { store.set('wb:blanks:' + state.p.id, Array.from(state.blanks)); }
+  function saveOpts() { store.set('wb:opts', state.opts); }
+
+  function applyBlanks() {
+    const sheet = $('.sheet');
+    if (!sheet) return;
+    let no = 0;
+    $$('.bk', sheet).forEach((el) => {
+      const on = state.blanks.has(el.dataset.bid);
+      el.classList.toggle('blank', on);
+      if (on) el.dataset.no = ++no; else delete el.dataset.no;
+    });
+    sheet.classList.toggle('show-answers', state.opts.answers);
+    sheet.classList.toggle('numbered', state.opts.numbers);
+    document.body.classList.toggle('editing', state.opts.edit);
+    $('#blank-count').textContent = `빈칸 ${no}개`;
+    relayout();
+  }
+
+  function relayout() {
+    const sheet = $('.sheet');
+    if (sheet && state.p) fit(sheet, state.p);
+  }
+
+  function openSheet(id) {
+    const p = WB.passages[id];
+    if (!p) { showGallery(); return; }
+    state.p = p;
+    const { html, units } = renderSheet(p);
+    state.units = units;
+    const ids = new Set(units.map((u) => u.id));
+    state.blanks = new Set(store.get('wb:blanks:' + id, []).filter((b) => ids.has(b)));
+    $('#gallery').hidden = true;
+    $('#viewer').hidden = false;
+    $('#tb-sheet').hidden = false;
+    $('#tb-title').textContent = p.title;
+    document.title = `${p.title} — 국어 학습지`;
+    $('.sheet-holder').innerHTML = html;
+    syncToggles();
+    applyBlanks();
+    document.fonts.ready.then(relayout);
+  }
+
+  function showGallery() {
+    state.p = null;
+    $('#viewer').hidden = true;
+    $('#tb-sheet').hidden = true;
+    $('#gallery').hidden = false;
+    document.title = '국어 학습지';
+    const list = Object.values(WB.passages).sort((a, b) => (a.order || 0) - (b.order || 0));
+    $('#gallery-list').innerHTML = list.map((p) => `
+      <a class="g-card" href="#/${esc(p.id)}">
+        <span class="g-unit">${esc(p.unit || '')}</span>
+        <span class="g-title">${esc(p.title)}${p.hanja ? `<small>(${esc(p.hanja)})</small>` : ''}</span>
+        <span class="g-meta">${esc(p.author || '')}${p.genre ? ' · ' + esc(p.genre) : ''}</span>
+      </a>`).join('') || '<p class="empty">등록된 지문이 없습니다.</p>';
+  }
+
+  function syncToggles() {
+    $$('[data-opt]').forEach((b) => b.setAttribute('aria-pressed', !!state.opts[b.dataset.opt]));
+  }
+
+  function autoBlank() {
+    const { cats, ratio } = state.auto;
+    const pool = state.units.filter((u) => cats[u.cat]);
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    const n = Math.round(pool.length * ratio / 100);
+    state.blanks = new Set(pool.slice(0, n).map((u) => u.id));
+    saveBlanks();
+    applyBlanks();
+  }
+
+  function setupAutoPanel() {
+    const box = $('#auto-cats');
+    box.innerHTML = Object.entries(CATS).map(([k, label]) =>
+      `<label><input type="checkbox" data-cat="${k}" ${state.auto.cats[k] ? 'checked' : ''}> ${label}</label>`).join('');
+    box.addEventListener('change', (e) => {
+      const k = e.target.dataset.cat;
+      if (k) { state.auto.cats[k] = e.target.checked; store.set('wb:auto', state.auto); }
+    });
+    const r = $('#auto-ratio'), out = $('#auto-ratio-out');
+    r.value = state.auto.ratio; out.textContent = r.value + '%';
+    r.addEventListener('input', () => {
+      state.auto.ratio = +r.value; out.textContent = r.value + '%'; store.set('wb:auto', state.auto);
+    });
+    $('#auto-go').addEventListener('click', () => { autoBlank(); $('#auto-panel').hidden = true; });
+  }
+
+  function printAs(answers) {
+    const prev = state.opts.answers;
+    state.opts.answers = answers;
+    applyBlanks();
+    const restore = () => { state.opts.answers = prev; applyBlanks(); window.removeEventListener('afterprint', restore); };
+    window.addEventListener('afterprint', restore);
+    window.print();
+  }
+
+  function bind() {
+    document.addEventListener('click', (e) => {
+      const bk = state.opts.edit && e.target.closest('.sheet .bk');
+      if (bk) {
+        const id = bk.dataset.bid;
+        state.blanks.has(id) ? state.blanks.delete(id) : state.blanks.add(id);
+        saveBlanks();
+        applyBlanks();
+        return;
+      }
+      const opt = e.target.closest('[data-opt]');
+      if (opt) {
+        const k = opt.dataset.opt;
+        state.opts[k] = !state.opts[k];
+        saveOpts(); syncToggles(); applyBlanks();
+        return;
+      }
+      const act = e.target.closest('[data-act]');
+      if (!act) {
+        if (!e.target.closest('#auto-panel')) $('#auto-panel').hidden = true;
+        return;
+      }
+      switch (act.dataset.act) {
+        case 'auto': $('#auto-panel').hidden = !$('#auto-panel').hidden; break;
+        case 'all': state.blanks = new Set(state.units.filter((u) => state.auto.cats[u.cat]).map((u) => u.id)); saveBlanks(); applyBlanks(); break;
+        case 'clear': state.blanks.clear(); saveBlanks(); applyBlanks(); break;
+        case 'print': printAs(false); break;
+        case 'print-key': printAs(true); break;
+      }
+    });
+    window.addEventListener('hashchange', route);
+  }
+
+  function route() {
+    const id = decodeURIComponent((location.hash.match(/^#\/([^?]+)/) || [])[1] || '');
+    if (id) openSheet(id); else showGallery();
+  }
+
+  function loadScript(src) {
+    return new Promise((res) => {
+      const s = document.createElement('script');
+      s.src = src; s.onload = res;
+      s.onerror = () => { console.warn('불러오기 실패:', src); res(); };
+      document.head.appendChild(s);
+    });
+  }
+
+  WB.start = function () {
+    bind();
+    setupAutoPanel();
+    Promise.all((WB.manifest || []).map((id) => loadScript(`data/passages/${id}.js`))).then(route);
+  };
+})();

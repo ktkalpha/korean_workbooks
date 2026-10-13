@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1000">
+  <title>국어 학습지</title>
+  <link rel="stylesheet" href="css/fonts.css">
+  <link rel="stylesheet" href="css/app.css">
+  <link rel="stylesheet" href="css/sheet.css">
+  <script src="js/registry.js"></script>
+  <script src="data/manifest.js"></script>
+  <script src="js/app.js"></script>
+</head>
+<body>
+  <header class="toolbar">
+    <a class="brand" href="#/">국어 학습지</a>
+    <div id="tb-sheet" class="tb-sheet" hidden>
+      <span id="tb-title" class="tb-title"></span>
+      <span id="blank-count" class="tb-count"></span>
+      <div class="tb-group">
+        <button type="button" data-opt="edit" title="켜 두면 학습지의 필기·핵심어를 눌러 빈칸으로 지정하거나 되돌립니다">빈칸 지정</button>
+        <div class="tb-pop">
+          <button type="button" data-act="auto">⚄ 자동 빈칸</button>
+          <div id="auto-panel" class="pop" hidden>
+            <p class="pop-h">빈칸 대상</p>
+            <div id="auto-cats" class="pop-cats"></div>
+            <p class="pop-h">비율 <output id="auto-ratio-out"></output></p>
+            <input id="auto-ratio" type="range" min="10" max="100" step="5">
+            <div class="pop-row">
+              <button type="button" data-act="all">대상 전부</button>
+              <button type="button" id="auto-go" class="primary">무작위 뚫기</button>
+            </div>
+          </div>
+        </div>
+        <button type="button" data-act="clear">빈칸 지우기</button>
+      </div>
+      <div class="tb-group">
+        <button type="button" data-opt="numbers">번호</button>
+        <button type="button" data-opt="answers">정답 보기</button>
+      </div>
+      <div class="tb-group">
+        <button type="button" data-act="print" class="primary">학습지 인쇄</button>
+        <button type="button" data-act="print-key">정답지 인쇄</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section id="gallery" class="gallery" hidden>
+      <h1>지문 목록</h1>
+      <p class="lead">지문 · 필기 · 갈래 및 특성 정리를 A4 한 장에 담은 학습지입니다. 지문을 고르고 빈칸을 뚫은 뒤 A4로 인쇄하세요.</p>
+      <div id="gallery-list" class="g-list"></div>
+    </section>
+
+    <section id="viewer" class="viewer" hidden>
+      <p id="fit-warn" class="fit-warn" hidden>내용이 A4 한 장을 넘습니다. 정리 항목을 줄여 주세요.</p>
+      <div class="sheet-stage"><div class="sheet-holder"></div></div>
+    </section>
+  </main>
+
+  <script>WB.start();</script>
+</body>
+</html>

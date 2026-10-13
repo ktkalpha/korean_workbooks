@@ -1,0 +1,30 @@
+/* KoPubWorld 바탕 · 돋움 (옛한글 조합 지원). 설치된 글꼴이 있으면 그것을 먼저 쓴다. */
+@font-face {
+  font-family: 'KoPubWorld Batang'; font-weight: 300; font-display: block;
+  src: local('KoPubWorldBatang_Pro Light'), local('KoPubWorldBatangPL'), url('../fonts/KoPubWorld-Batang-Light.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'KoPubWorld Batang'; font-weight: 400 500; font-display: block;
+  src: local('KoPubWorldBatang_Pro Medium'), local('KoPubWorldBatangPM'), url('../fonts/KoPubWorld-Batang-Medium.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'KoPubWorld Batang'; font-weight: 600 800; font-display: block;
+  src: local('KoPubWorldBatang_Pro Bold'), local('KoPubWorldBatangPB'), url('../fonts/KoPubWorld-Batang-Bold.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'KoPubWorld Dotum'; font-weight: 300; font-display: block;
+  src: local('KoPubWorldDotum_Pro Light'), local('KoPubWorldDotumPL'), url('../fonts/KoPubWorld-Dotum-Light.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'KoPubWorld Dotum'; font-weight: 400 500; font-display: block;
+  src: local('KoPubWorldDotum_Pro Medium'), local('KoPubWorldDotumPM'), url('../fonts/KoPubWorld-Dotum-Medium.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'KoPubWorld Dotum'; font-weight: 600 800; font-display: block;
+  src: local('KoPubWorldDotum_Pro Bold'), local('KoPubWorldDotumPB'), url('../fonts/KoPubWorld-Dotum-Bold.woff2') format('woff2');
+}
+
+:root {
+  --f-batang: 'KoPubWorld Batang', 'KoPub Batang', serif;
+  --f-dotum: 'KoPubWorld Dotum', 'KoPub Dotum', sans-serif;
+}
