@@ -290,21 +290,78 @@
   /* ---------- 앱 ---------- */
   const state = {
     p: null, units: [], blanks: new Set(),
+    drags: [],            // 드래그로 만든 빈칸: { id, s, e } (학습지 전체 글자 위치)
     opts: Object.assign({ edit: true, numbers: true, answers: false }, store.get('wb:opts', {})),
     auto: store.get('wb:auto', DEFAULT_AUTO),
   };
 
   function saveBlanks() { store.set('wb:blanks:' + state.p.id, Array.from(state.blanks)); }
+  function saveDrags() { store.set('wb:drags:' + state.p.id, state.drags); }
+
+  /* ---------- 드래그 빈칸: 고른 글자 범위를 그대로 빈칸으로 ---------- */
+  // 학습지 안 글자 위치(0부터)로 범위를 기억한다. 같은 지문이면 다시 그려도 위치가 같다.
+  function textOffset(root, node, offset) {
+    const r = document.createRange();
+    r.setStart(root, 0);
+    r.setEnd(node, offset);
+    return r.toString().length;
+  }
+
+  function wrapDrag(root, d) {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const parts = [];
+    let pos = 0, n;
+    while ((n = walker.nextNode())) {
+      const len = n.data.length;
+      const a = Math.max(d.s, pos), b = Math.min(d.e, pos + len);
+      if (a < b) parts.push({ n, a: a - pos, b: b - pos });
+      pos += len;
+      if (pos >= d.e) break;
+    }
+    parts.forEach(({ n, a, b }) => {
+      if (!n.data.slice(a, b).trim()) return;          // 칸 사이 공백은 감싸지 않는다
+      let mid = n;
+      if (a > 0) mid = mid.splitText(a);
+      if (b - a < mid.data.length) mid.splitText(b - a);
+      const span = document.createElement('span');
+      span.className = 'bk drag';
+      span.dataset.bid = d.id;
+      mid.parentNode.insertBefore(span, mid);
+      span.appendChild(mid);
+    });
+  }
+
+  function addDragFromSelection() {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.rangeCount) return false;
+    const inner = $('.sheet .sheet-inner');
+    const range = sel.getRangeAt(0);
+    if (!inner || !inner.contains(range.commonAncestorContainer)) return false;
+    let s0 = textOffset(inner, range.startContainer, range.startOffset);
+    let e0 = textOffset(inner, range.endContainer, range.endOffset);
+    const text = inner.textContent;
+    while (s0 < e0 && /\s/.test(text[s0])) s0++;      // 앞뒤 공백 제외
+    while (e0 > s0 && /\s/.test(text[e0 - 1])) e0--;
+    sel.removeAllRanges();
+    if (e0 <= s0) return false;
+    state.drags.push({ id: 'D' + Date.now().toString(36), s: s0, e: e0 });
+    saveDrags();
+    renderCurrent();
+    return true;
+  }
   function saveOpts() { store.set('wb:opts', state.opts); }
 
   function applyBlanks() {
     const sheet = $('.sheet');
     if (!sheet) return;
     let no = 0;
+    const seen = new Set();
     $$('.bk', sheet).forEach((el) => {
-      const on = state.blanks.has(el.dataset.bid);
+      const bid = el.dataset.bid;
+      const on = el.classList.contains('drag') || state.blanks.has(bid);
       el.classList.toggle('blank', on);
-      if (on) el.dataset.no = ++no; else delete el.dataset.no;
+      delete el.dataset.no;
+      if (on && !seen.has(bid)) { seen.add(bid); el.dataset.no = ++no; }  // 여러 조각이어도 번호는 하나
     });
     sheet.classList.toggle('show-answers', state.opts.answers);
     sheet.classList.toggle('numbered', state.opts.numbers);
@@ -331,10 +388,18 @@
     $('#tb-sheet').hidden = false;
     $('#tb-title').textContent = p.title;
     document.title = `${p.title} — 국어 학습지`;
-    $('.sheet-holder').innerHTML = html;
+    state.drags = store.get('wb:drags:' + id, []);
+    state.html = html;
+    renderCurrent();
     syncToggles();
-    applyBlanks();
     document.fonts.ready.then(relayout);
+  }
+
+  function renderCurrent() {
+    $('.sheet-holder').innerHTML = state.html;
+    const inner = $('.sheet .sheet-inner');
+    state.drags.forEach((d) => wrapDrag(inner, d));
+    applyBlanks();
   }
 
   function showGallery() {
@@ -395,8 +460,19 @@
   }
 
   function bind() {
+    let dragged = false;
+    document.addEventListener('mouseup', (e) => {
+      dragged = state.opts.edit && !!e.target.closest('.sheet') && addDragFromSelection();
+    });
     document.addEventListener('click', (e) => {
+      if (dragged) { dragged = false; return; }       // 드래그 끝의 click은 무시
       const bk = state.opts.edit && e.target.closest('.sheet .bk');
+      if (bk && bk.classList.contains('drag')) {
+        state.drags = state.drags.filter((d) => d.id !== bk.dataset.bid);
+        saveDrags();
+        renderCurrent();
+        return;
+      }
       if (bk) {
         const id = bk.dataset.bid;
         state.blanks.has(id) ? state.blanks.delete(id) : state.blanks.add(id);
@@ -419,7 +495,7 @@
       switch (act.dataset.act) {
         case 'auto': $('#auto-panel').hidden = !$('#auto-panel').hidden; break;
         case 'all': state.blanks = new Set(state.units.filter((u) => state.auto.cats[u.cat]).map((u) => u.id)); saveBlanks(); applyBlanks(); break;
-        case 'clear': state.blanks.clear(); saveBlanks(); applyBlanks(); break;
+        case 'clear': state.blanks.clear(); state.drags = []; saveBlanks(); saveDrags(); renderCurrent(); break;
         case 'print': printAs(false); break;
         case 'print-key': printAs(true); break;
       }

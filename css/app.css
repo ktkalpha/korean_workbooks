@@ -92,3 +92,4 @@ main { padding: 16px; }
 /* 빈칸 편집 모드에서 누를 수 있는 부분 표시 */
 body.editing .sheet .bk { cursor: pointer; border-radius: 2px; }
 body.editing .sheet .bk:hover { outline: 1.5px dashed #e07a1f; outline-offset: 1px; }
+body.editing .sheet ::selection { background: #ffd2a1; }
