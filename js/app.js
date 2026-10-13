@@ -47,24 +47,23 @@
     return /\{\{.+?\}\}/.test(s) ? rich(s, ctx, cat) : unit(ctx, cat, rich(s, ctx, cat), 'whole');
   }
 
-  // 본문 한 줄: [대상]{표시:필기}, ^1
+  // 각주 번호 ^1 → 위첨자 (이미 escape된 문자열에 적용)
+  const fnRefs = (h) => h.replace(/\^(\d+)/g, '<sup class="fn-ref">$1</sup>');
+
+  // 본문 한 줄: [대상]{표시:필기} · [대상]{표시<:필기}(필기를 대상 왼쪽 끝에 맞춤) · ^1
   function parseLine(text, ctx) {
-    const re = /\[([^\]]+)\]\{([a-z])(?::([^}]*))?\}|\^(\d+)/g;
+    const re = /\[([^\]]+)\]\{([a-z])(<)?(?::((?:\{\{.*?\}\}|[^}])*))?\}/g;
     let html = '', last = 0, m;
     const notes = [];
     while ((m = re.exec(text))) {
-      html += esc(text.slice(last, m.index));
-      if (m[4]) {
-        html += `<sup class="fn-ref">${m[4]}</sup>`;
-      } else {
-        const k = notes.length;
-        const target = unit(ctx, 'text', esc(m[1]), 'tgt');
-        html += `<span class="an m-${m[2]}" data-k="${k}">${target}</span>`;
-        notes.push({ k, html: m[3] ? blankable(m[3].replace(/\\n/g, '\n'), ctx, 'note') : '' });
-      }
+      html += fnRefs(esc(text.slice(last, m.index)));
+      const k = notes.length;
+      const target = unit(ctx, 'text', fnRefs(esc(m[1])), 'tgt');
+      html += `<span class="an m-${m[2]}" data-k="${k}">${target}</span>`;
+      notes.push({ k, align: m[3] ? 'start' : 'center', html: m[4] ? blankable(m[4].replace(/\\n/g, '\n'), ctx, 'note') : '' });
       last = re.lastIndex;
     }
-    html += esc(text.slice(last));
+    html += fnRefs(esc(text.slice(last)));
     return { html, notes: notes.filter((n) => n.html) };
   }
 
@@ -73,59 +72,69 @@
     const units = [];
     const C = (prefix) => ({ prefix, n: 0, units });
     const P = p.passage;
+    const hasTrans = P.lines.some((l) => l.trans);
+    const stageW = P.stageWidth || (hasTrans ? '37mm' : '42mm');
+    const cols = hasTrans ? `minmax(0,1fr) ${stageW} ${P.transWidth || '37mm'}` : `minmax(0,1fr) ${stageW}`;
+    const pStyle = `--cols:${cols};--gut:${P.gutter || '24mm'};--src-size:${P.textSize || 1.42}em`;
 
     const lines = P.lines.map((ln, i) => {
       const ctx = C(`L${i + 1}-`);
       const { html, notes } = parseLine(ln.text, ctx);
+      if (ln.under) notes.push({ k: 'u', align: 'under', at: ln.underAt || 0, html: blankable(ln.under, ctx, 'note') });
       const side = ln.side ? `<span class="side">${blankable(ln.side, ctx, 'note')}</span>` : '';
       const stage = ln.stage
-        ? `<div class="stage"><span class="stage-mark">▶</span> <b class="stage-tag">${esc(ln.stage.tag)}</b>: ${blankable(ln.stage.text, ctx, 'note')}</div>`
+        ? `<div class="stage"><span class="stage-tag">${esc(ln.stage.tag)}</span><span class="stage-v">${blankable(ln.stage.text, ctx, 'note')}</span></div>`
         : '';
       const trans = ln.trans ? unit(ctx, 'trans', rich(ln.trans, ctx, 'trans'), 'whole') : '';
-      return `<div class="ln" data-li="${i + 1}">
+      const cls = ['ln', ln.gapBefore ? 'gap' : '', ln.indent ? 'indent' : ''].join(' ');
+      return `<div class="${cls}" data-li="${i + 1}">
         <div class="c-src"><div class="src"><span class="src-text">${html}</span>${side}</div>
-          <div class="notes">${notes.map((n) => `<div class="nt" data-k="${n.k}">${n.html}</div>`).join('')}</div></div>
+          <div class="notes">${notes.map((n) => `<div class="nt" data-k="${n.k}" data-align="${n.align}" data-at="${n.at || 0}">${n.html}</div>`).join('')}</div></div>
         <div class="c-stage">${stage}</div>
-        <div class="c-trans">${trans}</div>
+        ${hasTrans ? `<div class="c-trans">${trans}</div>` : ''}
       </div>`;
     }).join('');
 
     const brackets = (P.brackets || []).map((b, i) =>
       `<div class="br-label" data-bi="${i}">${blankable(b.label, C(`B${i}-`), 'note')}</div>`).join('');
+    const rightNotes = (P.rightNotes || []).map((r, i) =>
+      `<div class="rn" data-ri="${i}">${blankable(r.text, C(`R${i}-`), 'note')}</div>`).join('');
 
     let closing = '';
     if (P.closing) {
       const ctx = C('CL-');
-      closing = `<div class="ln closing-row"><div class="c-src"><div class="closing">
+      closing = `<div class="closing">
         <div class="closing-main">${blankable(P.closing.text, ctx, 'note')}</div>
         ${P.closing.sub ? `<div class="closing-sub">${blankable(P.closing.sub, ctx, 'note')}</div>` : ''}
-      </div></div></div>`;
+      </div>`;
     }
 
     const fns = (P.footnotes || []).map((f, i) =>
-      `<div class="fn"><span class="fn-n">${f.n}</span> <b>${esc(f.term)}</b> ${rich(f.text, C(`F${i}-`), 'note')}</div>`).join('');
+      `<div class="fn"><span class="fn-n">${f.n}</span><span><b>${esc(f.term)}</b> ${rich(f.text, C(`F${i}-`), 'note')}</span></div>`).join('');
 
     const cards = (p.summary || []).map((c, ci) => renderCard(c, C(`K${ci}-`))).join('');
+    const where = [p.unit, p.lesson].filter(Boolean).map(esc).join(' · ');
 
     const html = `<div class="sheet" data-id="${esc(p.id)}"><div class="sheet-inner">
       <header class="sh-head">
-        <div class="sh-top"><span>${esc(p.unit || '')}${p.lesson ? ' · ' + esc(p.lesson) : ''}</span><span class="sh-kind">문학 학습지</span></div>
+        <div class="sh-top"><span class="sh-where">${where}</span><span class="sh-kind">문학 학습지</span></div>
         <div class="sh-title-row">
-          <h1 class="sh-title">${esc(p.title)}${p.hanja ? `<span class="hanja">(${esc(p.hanja)})</span>` : ''}</h1>
-          <span class="sh-author">${esc(p.author || '')}</span>
-          ${p.genre ? `<span class="chip">${esc(p.genre)}</span>` : ''}
-          <div class="sh-name"><span>학번</span><i></i><span>이름</span><i class="wide"></i></div>
+          <div class="sh-title-block">
+            ${p.genre ? `<span class="chip">${esc(p.genre)}</span>` : ''}
+            <h1 class="sh-title">${esc(p.title)}${p.hanja ? `<span class="hanja">${esc(p.hanja)}</span>` : ''}</h1>
+            <div class="sh-by"><span class="sh-author">${esc(p.author || '')}</span>${p.source ? `<span class="sh-source">${esc(p.source)}</span>` : ''}</div>
+          </div>
+          <div class="sh-name"><div><span>학번</span><i></i></div><div><span>이름</span><i></i></div></div>
         </div>
-        ${p.source ? `<div class="sh-source">— ${esc(p.source)}</div>` : ''}
       </header>
 
       <section class="sec sec-passage">
-        <h2 class="sec-h"><span class="sec-n">Ⅰ</span>지문 읽기 · 필기</h2>
-        <div class="passage">
-          <div class="ln col-head"><div>${esc(P.textLabel || '본문')}</div><div>${esc(P.stageLabel || '')}</div><div>${esc(P.transLabel || '')}</div></div>
+        <h2 class="sec-h"><span class="sec-n">Ⅰ</span>지문 읽기 · 필기${P.legend ? `<span class="sec-legend">${esc(P.legend)}</span>` : ''}</h2>
+        <div class="passage" style="${pStyle}">
+          <div class="ln col-head"><div>${esc(P.textLabel || '본문')}</div><div>${esc(P.stageLabel || '시상 전개')}</div>${hasTrans ? `<div>${esc(P.transLabel || '현대어 풀이')}</div>` : ''}</div>
           <div class="passage-body">
             <svg class="br-svg" aria-hidden="true"></svg>
-            ${brackets}
+            ${brackets}${rightNotes}
             ${lines}
             ${closing}
           </div>
@@ -137,35 +146,45 @@
         <h2 class="sec-h"><span class="sec-n">Ⅱ</span>갈래 및 특성 정리</h2>
         <div class="summary">${cards}</div>
       </section>
+
+      <footer class="sh-foot"><span>${esc(p.title)} — ${esc(p.author || '')}</span><span>${where}</span></footer>
     </div></div>`;
 
     return { html, units };
   }
 
   function renderCard(c, ctx) {
+    const B = (v) => blankable(v, ctx, 'key');
     let body = '';
     if (c.type === 'table') {
-      body = `<table class="kv">${c.rows.map(([k, v]) =>
-        `<tr><th>${esc(k)}</th><td>${blankable(v, ctx, 'key')}</td></tr>`).join('')}</table>`;
+      body = `<table class="kv">${c.rows.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${B(v)}</td></tr>`).join('')}</table>`;
     } else if (c.type === 'stages') {
       body = `<div class="stages">${c.rows.map(([rng, tag, v]) =>
-        `<div class="stg"><span class="stg-rng">${esc(rng)}</span><span class="stg-tag">${esc(tag)}</span><span class="stg-v">${blankable(v, ctx, 'key')}</span></div>`).join('')}</div>`;
+        `<div class="stg"><span class="stg-rng">${esc(rng)}</span><span class="stg-tag">${esc(tag)}</span><span class="stg-v">${B(v)}</span></div>`).join('')}</div>`;
     } else if (c.type === 'map') {
       body = `<table class="map">${c.rows.map(([k, v]) =>
-        `<tr><th>${esc(k)}</th><td class="arr">→</td><td>${blankable(v, ctx, 'key')}</td></tr>`).join('')}</table>`;
+        `<tr><th>${esc(k)}</th><td class="arr">→</td><td>${B(v)}</td></tr>`).join('')}</table>`;
     } else if (c.type === 'flow') {
-      body = `<div class="flow">${c.steps.map((s) => `<div class="fl-step">${blankable(s, ctx, 'key')}</div>`).join('<div class="fl-arr">▼</div>')}</div>`;
+      body = `<div class="flow">${c.steps.map((s) => `<div class="fl-step">${B(s)}</div>`).join('<div class="fl-arr"></div>')}</div>`;
     } else if (c.type === 'list') {
-      body = `<ul class="list">${c.items.map((s) => `<li>${blankable(s, ctx, 'key')}</li>`).join('')}</ul>`;
+      body = `<ul class="list">${c.items.map((s) => `<li>${B(s)}</li>`).join('')}</ul>`;
+    } else if (c.type === 'compare') {
+      // head: ['', 'A', 'B'] / rows: [['항목', a, b]]
+      body = `<table class="cmp"><thead><tr>${c.head.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead>
+        <tbody>${c.rows.map(([k, ...vs]) => `<tr><th>${esc(k)}</th>${vs.map((v) => `<td>${B(v)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+    } else if (c.type === 'meter') {
+      // rows: [['초장', '음보1', '음보2', ...]]
+      body = `<table class="meter">${c.rows.map(([k, ...vs]) =>
+        `<tr><th>${esc(k)}</th>${vs.map((v) => `<td>${B(v)}</td>`).join('')}</tr>`).join('')}</table>`;
     } else {
-      body = `<p class="text">${blankable(c.text || '', ctx, 'key')}</p>`;
+      body = `<p class="text">${B(c.text || '')}</p>`;
     }
+    if (c.foot) body += `<p class="card-foot">${B(c.foot)}</p>`;
     const pos = [c.span && `grid-column: span ${c.span}`, c.rowSpan && `grid-row: span ${c.rowSpan}`].filter(Boolean).join(';');
-    const span = pos ? ` style="${pos}"` : '';
-    return `<div class="card card-${esc(c.type)}"${span}><h3>■ ${esc(c.title)}</h3>${body}</div>`;
+    return `<div class="card card-${esc(c.type)}"${pos ? ` style="${pos}"` : ''}><h3>${esc(c.title)}</h3>${body}</div>`;
   }
 
-  /* ---------- 필기 배치: 표시한 부분 바로 밑 가운데 ---------- */
+  /* ---------- 필기 배치: 표시한 부분 바로 밑 ---------- */
   function layoutNotes(sheet) {
     const GAP = 6;
     $$('.ln[data-li]', sheet).forEach((ln) => {
@@ -174,13 +193,18 @@
       const nts = $$('.nt', box);
       if (!nts.length) { box.style.height = '0px'; return; }
       const cr = cell.getBoundingClientRect();
-      const maxRight = cr.width;
+      const srcEm = parseFloat(getComputedStyle($('.src', ln)).fontSize);
       const items = nts.map((nt) => {
-        const an = $(`.an[data-k="${nt.dataset.k}"]`, ln);
-        const r = an.getBoundingClientRect();
         nt.style.left = '0px';
         const w = nt.offsetWidth;
-        return { nt, w, center: (r.left + r.right) / 2 - cr.left };
+        let center;
+        if (nt.dataset.align === 'under') {
+          center = parseFloat(nt.dataset.at) * srcEm + w / 2;
+        } else {
+          const r = $(`.an[data-k="${nt.dataset.k}"]`, ln).getBoundingClientRect();
+          center = nt.dataset.align === 'start' ? r.left - cr.left + w / 2 : (r.left + r.right) / 2 - cr.left;
+        }
+        return { nt, w, center };
       }).sort((a, b) => a.center - b.center);
 
       let prevRight = -Infinity;
@@ -191,7 +215,7 @@
       let nextLeft = Infinity;
       for (let i = items.length - 1; i >= 0; i--) {
         const it = items[i];
-        const right = Math.min(it.left + it.w, maxRight, nextLeft - GAP);
+        const right = Math.min(it.left + it.w, cr.width, nextLeft - GAP);
         it.left = Math.max(0, right - it.w);
         nextLeft = it.left;
       }
@@ -201,17 +225,15 @@
     });
   }
 
-  /* ---------- 줄 묶음 괄호와 낙구 화살표 ---------- */
+  /* ---------- 줄 묶음 괄호 · 오른쪽 필기 · 낙구 화살표 ---------- */
   function layoutBrackets(sheet, p) {
     const body = $('.passage-body', sheet);
     const svg = $('.br-svg', body);
     const B = body.getBoundingClientRect();
     const gut = parseFloat(getComputedStyle(body).paddingLeft);
     const x = gut - 10, tick = 7;
-    const srcMid = (li) => {
-      const r = $(`.ln[data-li="${li}"] .src`, body).getBoundingClientRect();
-      return r.top + r.height / 2 - B.top;
-    };
+    const srcRect = (li) => $(`.ln[data-li="${li}"] .src`, body).getBoundingClientRect();
+    const srcMid = (li) => { const r = srcRect(li); return r.top + r.height / 2 - B.top; };
     let d = '';
     (p.passage.brackets || []).forEach((b, i) => {
       const y1 = srcMid(b.from), y2 = srcMid(b.to);
@@ -220,11 +242,22 @@
       lab.style.width = (x - 6) + 'px';
       lab.style.top = ((y1 + y2) / 2 - lab.offsetHeight / 2) + 'px';
     });
+    (p.passage.rightNotes || []).forEach((r, i) => {
+      let right = 0;
+      for (let li = r.from; li <= r.to; li++) {
+        const t = $(`.ln[data-li="${li}"] .src`, body);
+        const last = t.lastElementChild && t.lastElementChild.classList.contains('side') ? t.lastElementChild : $('.src-text', t);
+        right = Math.max(right, last.getBoundingClientRect().right - B.left);
+      }
+      const el = $(`.rn[data-ri="${i}"]`, body);
+      const y1 = srcMid(r.from), y2 = srcMid(r.to);
+      el.style.left = (right + 8) + 'px';
+      el.style.top = ((y1 + y2) / 2 - el.offsetHeight / 2) + 'px';
+    });
     const cl = p.passage.closing && $('.closing', body);
     let arrow = '';
     if (cl) {
-      const r = $(`.ln[data-li="${p.passage.closing.from}"] .src`, body).getBoundingClientRect();
-      const y1 = r.top - B.top - 2;
+      const y1 = srcRect(p.passage.closing.from).top - B.top - 2;
       const m = $('.closing-main', cl).getBoundingClientRect();
       const y2 = m.top + m.height / 2 - B.top;
       const x2 = m.left - B.left - 4;
@@ -236,9 +269,10 @@
     svg.innerHTML = `<path d="${d}" fill="none"/>${arrow}`;
   }
 
-  /* ---------- 한 장에 맞추기 ---------- */
+  /* ---------- 한 장에 맞추기: 넘치면 줄이고, 남는 공간은 정리 카드가 채운다 ---------- */
   function fit(sheet, p) {
     const inner = $('.sheet-inner', sheet);
+    sheet.classList.add('fitting');
     let s = 1;
     for (; s >= 0.76; s = +(s - 0.02).toFixed(2)) {
       sheet.style.setProperty('--scale', s);
@@ -247,6 +281,7 @@
       if (inner.scrollHeight <= inner.clientHeight + 1) break;
     }
     const over = inner.scrollHeight > inner.clientHeight + 1;
+    sheet.classList.remove('fitting');
     const warn = $('#fit-warn');
     if (warn) warn.hidden = !over;
     return s;

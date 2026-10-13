@@ -40,7 +40,15 @@ const report = await page.evaluate(() => {
       if (rs[i].left < rs[j].right && rs[j].left < rs[i].right) overlaps.push(box.closest('.ln').dataset.li);
     }
   });
+  // 본문 줄이 칸을 넘는지 검사
+  const wideLines = [...document.querySelectorAll('.ln[data-li]')].filter((ln) => {
+    const cell = ln.querySelector('.c-src').getBoundingClientRect();
+    const src = ln.querySelector('.src');
+    const last = src.lastElementChild || src;
+    return last.getBoundingClientRect().right > cell.right + 1;
+  }).map((ln) => ln.dataset.li);
   return {
+    wideLines,
     scale: getComputedStyle(sheet).getPropertyValue('--scale').trim(),
     overflowPx: Math.max(0, inner.scrollHeight - inner.clientHeight),
     spareMm: ((inner.clientHeight - [...inner.children].reduce((a, c) => Math.max(a, c.getBoundingClientRect().bottom), 0) + inner.getBoundingClientRect().top) / 3.7795).toFixed(1),
@@ -59,5 +67,5 @@ const pdf = fs.readFileSync(path.join(outDir, `${id}.pdf`), 'latin1');
 report.pdfPages = (pdf.match(/\/Type\s*\/Page[^s]/g) || []).length;
 report.errors = errors;
 console.log(JSON.stringify(report, null, 2));
-const bad = report.overflowPx > 0 || report.pdfPages !== 1 || errors.length || report.noteOverlapLines.length;
+const bad = report.overflowPx > 0 || report.pdfPages !== 1 || errors.length || report.noteOverlapLines.length || report.wideLines.length;
 process.exit(bad ? 1 : 0);
