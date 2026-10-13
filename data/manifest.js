@@ -3,4 +3,5 @@ WB.manifest = [
   'jemangmaega',
   'sipnyeoneul',
   'namudo',
+  'namsinuiju',
 ];

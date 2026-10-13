@@ -22,6 +22,7 @@
   box-shadow: 0 2px 14px rgba(0,0,0,.18);
   -webkit-print-color-adjust: exact; print-color-adjust: exact;
 }
+.sheet-holder { display: grid; gap: 12px; }
 .sheet-inner { height: 100%; overflow: hidden; display: flex; flex-direction: column; gap: 3mm; }
 
 /* ── 머리 ── */
@@ -40,6 +41,9 @@
 .sh-by { display: flex; align-items: baseline; gap: .8em; margin-top: .6mm; }
 .sh-author { font-family: var(--f-batang); font-weight: 700; font-size: 1.1em; }
 .sh-source { font-size: .82em; color: var(--muted); }
+.sh-cont .sh-top { padding-bottom: 1.2mm; border-bottom: 1px solid var(--line); }
+.sec-cont { font-size: .8em; font-weight: 400; margin-left: .2em; }
+.sh-page { color: var(--muted); }
 .sh-name { display: grid; gap: 1.6mm; font-size: .85em; color: var(--muted); padding-bottom: .4mm; }
 .sh-name > div { display: flex; align-items: baseline; gap: .5em; }
 .sh-name i { display: inline-block; width: 30mm; border-bottom: 1px solid #8a9099; }
@@ -172,6 +176,8 @@
   .toolbar, .gallery, .fit-warn { display: none !important; }
   main { padding: 0; }
   .viewer, .sheet-stage { display: block; }
-  .sheet { box-shadow: none; }
+  .sheet { box-shadow: none; break-after: page; }
+  .sheet:last-child { break-after: auto; }
+  .sheet-holder { gap: 0; }
   body.editing .sheet .bk:hover { outline: none; }
 }

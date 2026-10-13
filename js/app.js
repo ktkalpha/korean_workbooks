@@ -77,7 +77,7 @@
     const cols = hasTrans ? `minmax(0,1fr) ${stageW} ${P.transWidth || '37mm'}` : `minmax(0,1fr) ${stageW}`;
     const pStyle = `--cols:${cols};--gut:${P.gutter || '24mm'};--src-size:${P.textSize || 1.42}em`;
 
-    const lines = P.lines.map((ln, i) => {
+    const lineHtml = (ln, i) => {
       const ctx = C(`L${i + 1}-`);
       const { html, notes } = parseLine(ln.text, ctx);
       if (ln.under) notes.push({ k: 'u', align: 'under', at: ln.underAt || 0, html: blankable(ln.under, ctx, 'note') });
@@ -93,30 +93,47 @@
         <div class="c-stage">${stage}</div>
         ${hasTrans ? `<div class="c-trans">${trans}</div>` : ''}
       </div>`;
-    }).join('');
+    };
 
-    const brackets = (P.brackets || []).map((b, i) =>
-      `<div class="br-label" data-bi="${i}">${blankable(b.label, C(`B${i}-`), 'note')}</div>`).join('');
-    const rightNotes = (P.rightNotes || []).map((r, i) =>
-      `<div class="rn" data-ri="${i}">${blankable(r.text, C(`R${i}-`), 'note')}</div>`).join('');
+    // 여러 장: pageBreak가 있는 줄부터 다음 장. 괄호·필기·각주는 해당 줄이 있는 장에 붙는다.
+    const pageOfLine = [];
+    let pg = 0;
+    P.lines.forEach((ln, i) => { if (i > 0 && ln.pageBreak) pg++; pageOfLine[i + 1] = pg; });
+    const nPages = pg + 1;
+    // 각주가 붙을 장: line(줄 번호)이 있으면 그 줄, 없으면 ^n이 처음 나오는 줄
+    const fnPage = (f) => {
+      if (f.line) return pageOfLine[f.line];
+      const n = f.n;
+      const i = P.lines.findIndex((ln) => new RegExp(`\\^${n}(?!\\d)`).test(ln.text));
+      return i < 0 ? nPages - 1 : pageOfLine[i + 1];
+    };
 
-    let closing = '';
+    const pageParts = Array.from({ length: nPages }, () => ({ lines: '', brackets: '', rightNotes: '', closing: '', fns: '' }));
+    P.lines.forEach((ln, i) => { pageParts[pageOfLine[i + 1]].lines += lineHtml(ln, i); });
+    (P.brackets || []).forEach((b, i) => {
+      pageParts[pageOfLine[b.from]].brackets += `<div class="br-label" data-bi="${i}">${blankable(b.label, C(`B${i}-`), 'note')}</div>`;
+    });
+    (P.rightNotes || []).forEach((r, i) => {
+      pageParts[pageOfLine[r.from]].rightNotes += `<div class="rn" data-ri="${i}">${blankable(r.text, C(`R${i}-`), 'note')}</div>`;
+    });
     if (P.closing) {
       const ctx = C('CL-');
-      closing = `<div class="closing">
+      pageParts[pageOfLine[P.closing.from]].closing = `<div class="closing">
         <div class="closing-main">${blankable(P.closing.text, ctx, 'note')}</div>
         ${P.closing.sub ? `<div class="closing-sub">${blankable(P.closing.sub, ctx, 'note')}</div>` : ''}
       </div>`;
     }
-
-    const fns = (P.footnotes || []).map((f, i) =>
-      `<div class="fn"><span class="fn-n">${f.n}</span><span><b>${esc(f.term)}</b> ${rich(f.text, C(`F${i}-`), 'note')}</span></div>`).join('');
+    (P.footnotes || []).forEach((f, i) => {
+      pageParts[fnPage(f)].fns += `<div class="fn"><span class="fn-n">${f.n}</span><span><b>${esc(f.term)}</b> ${rich(f.text, C(`F${i}-`), 'note')}</span></div>`;
+    });
 
     const cards = (p.summary || []).map((c, ci) => renderCard(c, C(`K${ci}-`))).join('');
     const where = [p.unit, p.lesson].filter(Boolean).map(esc).join(' · ');
+    const colHead = `<div class="ln col-head"><div>${esc(P.textLabel || '본문')}</div><div>${esc(P.stageLabel || '시상 전개')}</div>${hasTrans ? `<div>${esc(P.transLabel || '현대어 풀이')}</div>` : ''}</div>`;
 
-    const html = `<div class="sheet" data-id="${esc(p.id)}"><div class="sheet-inner">
-      <header class="sh-head">
+    const html = pageParts.map((pp, pi) => {
+      const first = pi === 0, last = pi === nPages - 1;
+      const head = first ? `<header class="sh-head">
         <div class="sh-top"><span class="sh-where">${where}</span><span class="sh-kind">문학 학습지</span></div>
         <div class="sh-title-row">
           <div class="sh-title-block">
@@ -126,29 +143,37 @@
           </div>
           <div class="sh-name"><div><span>학번</span><i></i></div><div><span>이름</span><i></i></div></div>
         </div>
-      </header>
-
-      <section class="sec sec-passage">
-        <h2 class="sec-h"><span class="sec-n">Ⅰ</span>지문 읽기 · 필기${P.legend ? `<span class="sec-legend">${esc(P.legend)}</span>` : ''}</h2>
+      </header>` : `<header class="sh-head sh-cont">
+        <div class="sh-top"><span class="sh-where">${esc(p.title)} — ${esc(p.author || '')}</span><span class="sh-kind">문학 학습지</span></div>
+      </header>`;
+      const passage = `<section class="sec sec-passage">
+        <h2 class="sec-h"><span class="sec-n">Ⅰ</span>지문 읽기 · 필기${first ? '' : '<span class="sec-cont">(이어서)</span>'}${P.legend ? `<span class="sec-legend">${esc(P.legend)}</span>` : ''}</h2>
         <div class="passage" style="${pStyle}">
-          <div class="ln col-head"><div>${esc(P.textLabel || '본문')}</div><div>${esc(P.stageLabel || '시상 전개')}</div>${hasTrans ? `<div>${esc(P.transLabel || '현대어 풀이')}</div>` : ''}</div>
+          ${colHead}
           <div class="passage-body">
             <svg class="br-svg" aria-hidden="true"></svg>
-            ${brackets}${rightNotes}
-            ${lines}
-            ${closing}
+            ${pp.brackets}${pp.rightNotes}
+            ${pp.lines}
+            ${pp.closing}
           </div>
-          ${fns ? `<div class="fns">${fns}</div>` : ''}
+          ${pp.fns ? `<div class="fns">${pp.fns}</div>` : ''}
         </div>
-      </section>
+      </section>`;
+      const summary = last ? `
 
       <section class="sec sec-summary">
         <h2 class="sec-h"><span class="sec-n">Ⅱ</span>갈래 및 특성 정리</h2>
         <div class="summary">${cards}</div>
-      </section>
+      </section>` : '';
+      const pageNo = nPages > 1 ? `<span class="sh-page">${pi + 1} / ${nPages}</span>` : '';
+      return `<div class="sheet" data-id="${esc(p.id)}"><div class="sheet-inner">
+      ${head}
 
-      <footer class="sh-foot"><span>${esc(p.title)} — ${esc(p.author || '')}</span><span>${where}</span></footer>
+      ${passage}${summary}
+
+      <footer class="sh-foot"><span>${esc(p.title)} — ${esc(p.author || '')}</span>${pageNo}<span>${where}</span></footer>
     </div></div>`;
+    }).join('');
 
     return { html, units };
   }
@@ -227,7 +252,10 @@
 
   /* ---------- 줄 묶음 괄호 · 오른쪽 필기 · 낙구 화살표 ---------- */
   function layoutBrackets(sheet, p) {
-    const body = $('.passage-body', sheet);
+    $$('.passage-body', sheet).forEach((body) => layoutBody(body, p));
+  }
+  function layoutBody(body, p) {
+    const has = (li) => !!$(`.ln[data-li="${li}"]`, body);
     const svg = $('.br-svg', body);
     const B = body.getBoundingClientRect();
     const gut = parseFloat(getComputedStyle(body).paddingLeft);
@@ -236,6 +264,7 @@
     const srcMid = (li) => { const r = srcRect(li); return r.top + r.height / 2 - B.top; };
     let d = '';
     (p.passage.brackets || []).forEach((b, i) => {
+      if (!has(b.from)) return;
       const y1 = srcMid(b.from), y2 = srcMid(b.to);
       d += `M${x + tick},${y1}H${x}V${y2}H${x + tick}`;
       const lab = $(`.br-label[data-bi="${i}"]`, body);
@@ -243,6 +272,7 @@
       lab.style.top = ((y1 + y2) / 2 - lab.offsetHeight / 2) + 'px';
     });
     (p.passage.rightNotes || []).forEach((r, i) => {
+      if (!has(r.from)) return;
       let right = 0;
       for (let li = r.from; li <= r.to; li++) {
         const t = $(`.ln[data-li="${li}"] .src`, body);
@@ -254,7 +284,7 @@
       el.style.left = (right + 8) + 'px';
       el.style.top = ((y1 + y2) / 2 - el.offsetHeight / 2) + 'px';
     });
-    const cl = p.passage.closing && $('.closing', body);
+    const cl = p.passage.closing && has(p.passage.closing.from) && $('.closing', body);
     let arrow = '';
     if (cl) {
       const y1 = srcRect(p.passage.closing.from).top - B.top - 2;
@@ -270,18 +300,20 @@
   }
 
   /* ---------- 한 장에 맞추기: 넘치면 줄이고, 남는 공간은 정리 카드가 채운다 ---------- */
-  function fit(sheet, p) {
-    const inner = $('.sheet-inner', sheet);
-    sheet.classList.add('fitting');
+  // 여러 장이면 모든 장을 같은 비율로 맞춘다.
+  function fit(holder, p) {
+    const sheets = $$('.sheet', holder);
+    const overflows = () => sheets.some((sh) => { const inner = $('.sheet-inner', sh); return inner.scrollHeight > inner.clientHeight + 1; });
+    sheets.forEach((sh) => sh.classList.add('fitting'));
     let s = 1;
     for (; s >= 0.76; s = +(s - 0.02).toFixed(2)) {
-      sheet.style.setProperty('--scale', s);
-      layoutNotes(sheet);
-      layoutBrackets(sheet, p);
-      if (inner.scrollHeight <= inner.clientHeight + 1) break;
+      sheets.forEach((sh) => sh.style.setProperty('--scale', s));
+      layoutNotes(holder);
+      layoutBrackets(holder, p);
+      if (!overflows()) break;
     }
-    const over = inner.scrollHeight > inner.clientHeight + 1;
-    sheet.classList.remove('fitting');
+    const over = overflows();
+    sheets.forEach((sh) => sh.classList.remove('fitting'));
     const warn = $('#fit-warn');
     if (warn) warn.hidden = !over;
     return s;
@@ -334,7 +366,7 @@
   function addDragFromSelection() {
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || !sel.rangeCount) return false;
-    const inner = $('.sheet .sheet-inner');
+    const inner = $('.sheet-holder');
     const range = sel.getRangeAt(0);
     if (!inner || !inner.contains(range.commonAncestorContainer)) return false;
     let s0 = textOffset(inner, range.startContainer, range.startOffset);
@@ -352,27 +384,29 @@
   function saveOpts() { store.set('wb:opts', state.opts); }
 
   function applyBlanks() {
-    const sheet = $('.sheet');
-    if (!sheet) return;
+    const holder = $('.sheet-holder');
+    if (!$('.sheet', holder)) return;
     let no = 0;
     const seen = new Set();
-    $$('.bk', sheet).forEach((el) => {
+    $$('.bk', holder).forEach((el) => {
       const bid = el.dataset.bid;
       const on = el.classList.contains('drag') || state.blanks.has(bid);
       el.classList.toggle('blank', on);
       delete el.dataset.no;
       if (on && !seen.has(bid)) { seen.add(bid); el.dataset.no = ++no; }  // 여러 조각이어도 번호는 하나
     });
-    sheet.classList.toggle('show-answers', state.opts.answers);
-    sheet.classList.toggle('numbered', state.opts.numbers);
+    $$('.sheet', holder).forEach((sheet) => {
+      sheet.classList.toggle('show-answers', state.opts.answers);
+      sheet.classList.toggle('numbered', state.opts.numbers);
+    });
     document.body.classList.toggle('editing', state.opts.edit);
     $('#blank-count').textContent = `빈칸 ${no}개`;
     relayout();
   }
 
   function relayout() {
-    const sheet = $('.sheet');
-    if (sheet && state.p) fit(sheet, state.p);
+    const holder = $('.sheet-holder');
+    if ($('.sheet', holder) && state.p) fit(holder, state.p);
   }
 
   function openSheet(id) {
@@ -398,8 +432,8 @@
 
   function renderCurrent() {
     $('.sheet-holder').innerHTML = state.html;
-    const inner = $('.sheet .sheet-inner');
-    state.drags.forEach((d) => wrapDrag(inner, d));
+    const holder = $('.sheet-holder');
+    state.drags.forEach((d) => wrapDrag(holder, d));
     applyBlanks();
   }
 
